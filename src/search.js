@@ -9,34 +9,24 @@ export class ElementSearcher {
    * @param {iterable} nodes - A bunch of HTMLElement.
    */
   constructor(nodes) {
-    this._nodes = new Map();
-    let i = 0;
-    for (const node of nodes) {
-      this._nodes.set(i, node);
-      i++;
+    this._words = [];
+    for (let node of nodes) {
+      let word = {
+        node: node,
+        fragments: this._getTextNodesRecursively(node),
+      };
+      this._words.push(word);
     }
 
-    this._boot();
   }
 
-  /**
-   * Does some extra work to initialize the object.
-   *
-   * @return {undefined}
-   */
-  _boot() {
-    this._textNodes = new Map();
-    this._nodes.forEach((node, id) => {
-      this._textNodes.set(
-        id,
-        Array.from(this._getTextNodesRecursively(node)).join(' ')
-      );
-    });
-  }
 
   /**
-   * Performs a search in the text nodes of this_nodes by
-   * showing or hiding the elements.
+   * Performs a search in the text nodes of this._words by
+   * showing or hiding the elements and
+   * reordering them in this order:
+   *    - Exact whole word matches
+   *    - Exact substring matches
    *
    * @param {string} query
    * @return {undefined}
@@ -46,20 +36,50 @@ export class ElementSearcher {
       this.showAll();
       return;
     }
+    let results_1 = [];
+    let results_2 = [];
 
-    this._nodes.forEach((element, id) => {
-      if (this._textNodes.get(id).includes(query)) { this._showElement(element); }
-      else { this._hideElement(element); }
-    });
+    for (let word of this._words) {
+      this._hideElement(word.node);
+    }
+
+    for (let word of this._words) {
+      if (word.fragments.has(query)) {
+        word.node.classList.add("exact-match");
+        results_1.push(word.node);
+      } else {
+        for (let f of word.fragments) {
+          if (f.includes(query)) {
+            results_2.push(word.node);
+            word.node.classList.remove("exact-match");
+            break;
+          }
+        }
+      }
+    }
+
+    let addResult = (node) => {
+      let container = node.parentNode;
+      container.insertBefore(node, container.childNodes[-1]);
+      this._showElement(node);
+    };
+
+    results_1.map(addResult);
+    results_2.map(addResult);
   }
 
   /**
-   * Marks all of the nodes as visible.
+   * Marks all of the nodes as visible and restores alphabetical order.
    *
    * @return {undefined}
    */
   showAll() {
-    this._nodes.forEach(this._showElement);
+    for (let word of this._words) {
+      let container = word.node.parentNode;
+      word.node.classList.remove("exact-match");
+      container.insertBefore(word.node, container.childNodes[-1]);
+      this._showElement(word.node);
+    }
   }
 
   /**
@@ -90,7 +110,7 @@ export class ElementSearcher {
    */
   _getTextNode(element) {
     for (const node of element.childNodes) {
-      if (node.nodeType === Node.TEXT_NODE) return node.nodeValue;
+      if (node.nodeType === Node.TEXT_NODE) return node.nodeValue.toLowerCase();
     }
 
     return '';
@@ -105,7 +125,8 @@ export class ElementSearcher {
    * nodes in no particular order.
    */
   _getTextNodesRecursively(element, textNodes = new Set()) {
-    textNodes.add(this._getTextNode(element));
+    let text = this._getTextNode(element);
+    text.split(/\W+/).forEach(textNodes.add, textNodes);
 
     if (element.hasChildNodes()) {
       for (const node of element.childNodes) this._getTextNodesRecursively(node, textNodes)
